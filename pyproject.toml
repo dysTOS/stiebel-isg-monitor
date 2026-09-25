@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stiebel-isg-monitor"
+version = "0.1.0"
+description = "Read-only local Modbus TCP logger for Stiebel Eltron ISG/WPM"
+requires-python = ">=3.10"
+
+[project.scripts]
+stiebel-monitor = "stiebel_monitor.__main__:main"
+
+[tool.setuptools.package-data]
+stiebel_monitor = ["static/*.html", "static/*.css", "static/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

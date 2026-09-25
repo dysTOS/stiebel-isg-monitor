@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Wärmepumpe · Live</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">WPL-A 10.2 HK 400</p>
+      <h1>Wärmepumpe</h1>
+    </div>
+    <div class="header-actions">
+      <div id="connection" class="connection"><i></i><span>Verbinde …</span></div>
+      <select id="range" aria-label="Zeitraum">
+        <option value="6">6 Stunden</option>
+        <option value="24" selected>24 Stunden</option>
+        <option value="168">7 Tage</option>
+        <option value="720">30 Tage</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero-grid">
+      <article class="card hero-card"><span>Außen</span><strong id="outside">–</strong><small>Außentemperatur</small></article>
+      <article class="card hero-card"><span>Heizkreis</span><strong id="room">–</strong><small>Isttemperatur HK 1</small></article>
+      <article class="card hero-card"><span>Vorlauf</span><strong id="flow">–</strong><small id="delta">Differenz –</small></article>
+      <article class="card hero-card accent"><span>Warmwasser</span><strong id="dhw">–</strong><small id="dhw-set">Soll –</small></article>
+    </section>
+
+    <section class="status-strip card">
+      <div><span class="label">Anlagenstatus</span><div id="status-chips" class="chips"></div></div>
+      <div class="metric"><span>Starts heute</span><strong id="starts-today">0</strong></div>
+      <div class="metric"><span>Ø Laufzeit</span><strong id="average-runtime">–</strong></div>
+      <div class="metric"><span>COP heute, grob</span><strong id="cop">–</strong></div>
+    </section>
+
+    <section class="chart-grid">
+      <article class="card panel wide">
+        <div class="panel-title"><div><p class="eyebrow">Temperaturen</p><h2>Thermischer Verlauf</h2></div><div id="temp-legend" class="legend"></div></div>
+        <div class="chart-wrap"><canvas id="temperature-chart"></canvas><div id="temp-empty" class="empty">Noch keine Verlaufsdaten</div></div>
+      </article>
+      <article class="card panel">
+        <div class="panel-title"><div><p class="eyebrow">Takten</p><h2>Starts pro Tag</h2></div></div>
+        <div class="chart-wrap compact"><canvas id="starts-chart"></canvas><div id="starts-empty" class="empty">Noch keine vollständigen Läufe</div></div>
+      </article>
+      <article class="card panel">
+        <div class="panel-title"><div><p class="eyebrow">Energie heute</p><h2>Wärme & Strom</h2></div></div>
+        <div id="energy-cards" class="energy-grid"></div>
+      </article>
+    </section>
+
+    <section class="bottom-grid">
+      <article class="card panel">
+        <div class="panel-title"><div><p class="eyebrow">Historie</p><h2>Letzte Verdichterläufe</h2></div></div>
+        <div class="table-wrap"><table><thead><tr><th>Start</th><th>Modus</th><th>Dauer</th></tr></thead><tbody id="runs"></tbody></table></div>
+      </article>
+      <article class="card panel details">
+        <div class="panel-title"><div><p class="eyebrow">Hydraulik</p><h2>Weitere Werte</h2></div></div>
+        <dl id="details"></dl>
+      </article>
+    </section>
+  </main>
+  <footer><span id="updated">Noch keine Daten</span><span>COP aus gerundeten Tageszählern · lokal · nur lesend</span></footer>
+  <script src="/app.js"></script>
+</body>
+</html>
