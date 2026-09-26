@@ -259,7 +259,7 @@ function renderRuns() {
 function renderDetails() {
   const box = $('details');
   box.replaceChildren();
-  [['Rücklauf', ['return_temperature'], '°C'], ['Puffer', ['buffer_temperature'], '°C'], ['Puffer Soll', ['buffer_set_temperature'], '°C'], ['Volumenstrom', ['flow_rate', 'heat_pump_flow_rate'], 'l/min'], ['Heizungsdruck', ['heating_pressure'], 'bar'], ['Verdichter Heizen', ['compressor_heating_hours', 'compressor_heating_hours_hp1'], 'h'], ['Verdichter Warmwasser', ['compressor_dhw_hours', 'compressor_dhw_hours_hp1'], 'h']].forEach(([label, names, unit]) => {
+  [['Rücklauf', ['return_temperature'], '°C'], ['Puffer', ['buffer_temperature'], '°C'], ['Puffer Soll', ['buffer_set_temperature'], '°C'], ['Volumenstrom', ['flow_rate', 'heat_pump_flow_rate'], 'l/min'], ['Heizungsdruck', ['heating_pressure'], 'bar'], ['Verdichter Heizen', ['compressor_heating_hours', 'compressor_heating_hours_hp1', 'compressor_heating_hours_wpm_system_hp1'], 'h'], ['Verdichter Warmwasser', ['compressor_dhw_hours', 'compressor_dhw_hours_hp1', 'compressor_dhw_hours_wpm_system_hp1'], 'h']].forEach(([label, names, unit]) => {
     const wrapper = document.createElement('div');
     const term = document.createElement('dt');
     const detail = document.createElement('dd');

@@ -22,7 +22,11 @@ class FakeClient:
         if start in self.fail_starts:
             raise OSError(f"read failed at {start}")
         values = [32768] * count
-        known = {507: 149, 518: 236, 522: 479, 523: 470, 584: 215, 2501: 1 << 6 if self.compressor else 0}
+        known = {
+            507: 149, 518: 236, 522: 479, 523: 470, 584: 215,
+            2501: 1 << 6 if self.compressor else 0,
+            3644: 116, 3645: 118,
+        }
         for address, value in known.items():
             if start <= address < start + count:
                 values[address - start] = value
@@ -45,6 +49,8 @@ class MonitorTest(unittest.TestCase):
             latest = {item["name"]: item["value"] for item in data["latest"]}
             self.assertEqual(latest["outside_temperature"], 14.9)
             self.assertEqual(latest["buffer_temperature"], 23.6)
+            self.assertEqual(latest["compressor_heating_hours_wpm_system_hp1"], 116)
+            self.assertEqual(latest["compressor_dhw_hours_wpm_system_hp1"], 118)
             self.assertEqual(len(data["runs"]), 1)
             self.assertTrue(data["monitor"]["connected"])
 
