@@ -21,13 +21,14 @@
         <option value="168">7 Tage</option>
         <option value="720">30 Tage</option>
       </select>
+      <a class="button-link" href="/registers">Register</a>
     </div>
   </header>
 
   <main>
     <section class="hero-grid">
-      <article class="card hero-card"><span>Außen</span><strong id="outside">–</strong><small>Außentemperatur</small></article>
-      <article class="card hero-card"><span>Heizkreis</span><strong id="room">–</strong><small>Isttemperatur HK 1</small></article>
+      <article class="card hero-card"><span>Außen</span><strong id="outside">–</strong><small id="outside-meta">Außentemperatur</small></article>
+      <article class="card hero-card"><span>Raumfühler</span><strong id="room">–</strong><small id="room-meta">Raumtemperatur</small></article>
       <article class="card hero-card"><span>Vorlauf</span><strong id="flow">–</strong><small id="delta">Differenz –</small></article>
       <article class="card hero-card accent"><span>Warmwasser</span><strong id="dhw">–</strong><small id="dhw-set">Soll –</small></article>
     </section>
@@ -39,18 +40,34 @@
       <div class="metric"><span>COP heute, grob</span><strong id="cop">–</strong></div>
     </section>
 
+    <section class="card panel diagnostics">
+      <div class="panel-title"><div><p class="eyebrow">Regelung</p><h2>Soll und Ist</h2></div></div>
+      <div id="targets" class="target-grid"></div>
+    </section>
+    <section class="card panel alerts">
+      <div class="panel-title"><div><p class="eyebrow">Diagnose</p><h2>Status und Hinweise</h2></div></div>
+      <div id="alerts-list" class="alerts-list"></div>
+      <details class="event-history"><summary>Letzte Ereignisse</summary><div id="events-list" class="alerts-list"></div></details>
+    </section>
+
     <section class="chart-grid">
       <article class="card panel wide">
         <div class="panel-title"><div><p class="eyebrow">Temperaturen</p><h2>Thermischer Verlauf</h2></div><div id="temp-legend" class="legend"></div></div>
-        <div class="chart-wrap"><canvas id="temperature-chart"></canvas><div id="temp-empty" class="empty">Noch keine Verlaufsdaten</div></div>
+        <div class="chart-wrap"><canvas id="temperature-chart"></canvas><div id="temp-empty" class="empty">Noch keine Verlaufsdaten</div><div id="temp-tooltip" class="chart-tooltip" role="status" aria-live="polite"></div></div>
       </article>
       <article class="card panel">
         <div class="panel-title"><div><p class="eyebrow">Takten</p><h2>Starts pro Tag</h2></div></div>
         <div class="chart-wrap compact"><canvas id="starts-chart"></canvas><div id="starts-empty" class="empty">Noch keine vollständigen Läufe</div></div>
+        <div id="cycling-summary" class="cycling-summary"></div>
       </article>
       <article class="card panel">
         <div class="panel-title"><div><p class="eyebrow">Energie heute</p><h2>Wärme & Strom</h2></div></div>
         <div id="energy-cards" class="energy-grid"></div>
+      </article>
+      <article class="card panel wide">
+        <div class="panel-title"><div><p class="eyebrow">Zeitraum</p><h2>Energie und geschätzter COP pro Tag</h2></div></div>
+        <div id="energy-history" class="history-grid"></div>
+        <p class="chart-note">Tageszählerwerte sind gespeicherte Momentaufnahmen; fehlende Messungen und der aktuelle Tag können unvollständig sein.</p>
       </article>
     </section>
 
@@ -66,6 +83,6 @@
     </section>
   </main>
   <footer><span id="updated">Noch keine Daten</span><span>COP aus gerundeten Tageszählern · lokal · nur lesend</span></footer>
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

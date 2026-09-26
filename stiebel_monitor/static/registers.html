@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Modbus-Register · Wärmepumpe</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">WPL-A 10.2 HK 400</p>
+      <h1>Register</h1>
+    </div>
+    <div class="header-actions">
+      <a class="button-link" href="/">← Dashboard</a>
+      <button id="refresh-registers" type="button">Jetzt auslesen</button>
+    </div>
+  </header>
+  <main>
+    <section class="card panel">
+      <div class="panel-title register-heading">
+        <div><p class="eyebrow">Live-Abfrage</p><h2>Alle bekannten Register</h2></div>
+        <div class="register-heading-meta">
+          <label class="register-filter">
+            <input id="show-unavailable" type="checkbox">
+            <span>Nicht verfügbare anzeigen</span>
+          </label>
+          <span id="register-updated" class="muted">Werte werden beim Öffnen frisch gelesen.</span>
+        </div>
+      </div>
+      <div class="table-wrap register-table-wrap">
+        <table class="register-table">
+          <thead><tr><th>Adresse</th><th>Name</th><th>Profil</th><th>Kategorie</th><th>Rohwert</th><th>Wert</th><th>Status</th></tr></thead>
+          <tbody id="register-rows"><tr><td colspan="7">Lese Register …</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/registers.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@ import threading
 import time
 
 from .modbus import ModbusTCP
-from .registers import READ_BLOCKS, REGISTERS, STATUS_BITS
+from .registers import OPTIONAL_READ_BLOCKS, READ_BLOCKS, REGISTERS, STATUS_BITS
 from .storage import Store
 
 
@@ -20,6 +20,7 @@ class Monitor:
         self.interval = max(1, interval)
         self.stop_event = threading.Event()
         self.state_lock = threading.Lock()
+        self.modbus_lock = threading.Lock()
         self.state = {"connected": False, "polling": False, "last_poll": None, "last_success": None, "error": None}
         self.previous_status = None
         self.run_start = None
@@ -42,7 +43,8 @@ class Monitor:
         self._set_state(polling=True, last_poll=timestamp)
         for start, count in READ_BLOCKS:
             try:
-                raw_values = self.client.read_input_registers(start, count)
+                with self.modbus_lock:
+                    raw_values = self.client.read_input_registers(start, count)
                 for offset, raw in enumerate(raw_values):
                     address = start + offset
                     reg = REGISTERS.get(address)
@@ -61,6 +63,24 @@ class Monitor:
                 for address in range(start, start + count):
                     reg = REGISTERS.get(address)
                     if reg:
+                        store.measurement(timestamp, reg, None, None, str(exc))
+
+        for start, count in OPTIONAL_READ_BLOCKS:
+            try:
+                with self.modbus_lock:
+                    raw_values = self.client.read_input_registers(start, count)
+                for offset, raw in enumerate(raw_values):
+                    reg = REGISTERS.get(start + offset)
+                    if reg is not None:
+                        value = reg.decode(raw)
+                        store.measurement(timestamp, reg, raw, value)
+                        values[start + offset] = value
+            except Exception as exc:
+                # Optional blocks differ between WPM generations. Persist the
+                # failed read so an older successful value cannot look live.
+                for address in range(start, start + count):
+                    reg = REGISTERS.get(address)
+                    if reg is not None:
                         store.measurement(timestamp, reg, None, None, str(exc))
 
         status = values.get(2501)

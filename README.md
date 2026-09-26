@@ -16,6 +16,12 @@ Der letzte Befehl startet gleichzeitig das Monitoring und das lokale Dashboard u
 <http://localhost:8080>. Es werden keine externen Webdienste, CDNs oder JavaScript-Pakete
 geladen. Für den Zugriff von anderen Geräten im Heimnetz zusätzlich `--listen 0.0.0.0`
 angeben; das Dashboard hat keine Anmeldung und sollte nicht ins Internet freigegeben werden.
+Kalendertage werden in der über `STIEBEL_TIMEZONE` konfigurierten Zeitzone ausgewertet;
+der Standard ist `Europe/Vienna`.
+
+Über den Button **Register** öffnet sich eine Diagnoseansicht. Sie liest die bekannten
+Register erst beim Aufruf aus, kennzeichnet das jeweilige WPM-Profil und hält das Ergebnis
+zehn Sekunden im Cache, damit parallele Browseraufrufe das ISG nicht unnötig belasten.
 
 Nur den Logger ohne Weboberfläche starten:
 
