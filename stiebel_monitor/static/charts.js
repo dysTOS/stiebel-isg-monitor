@@ -1,3 +1,13 @@
+export const STATUS_STATES = [
+  {label: 'Verdichter', bit: 6, color: '#a7e22e'},
+  {label: 'Heizen', bit: 4, color: '#ffb454'},
+  {label: 'Warmwasser', bit: 5, color: '#65d8d2'},
+  {label: 'HK-Pumpe', bit: 0, color: '#67aaf9'},
+  {label: 'Heizstab', bit: 3, color: '#ff6b6b'},
+  {label: 'Sommer', bit: 7, color: '#f1c75b'},
+  {label: 'Abtauen', bit: 9, color: '#bd93f9'},
+];
+
 function setupCanvas(canvas) {
   const rect = canvas.getBoundingClientRect();
   const dpr = devicePixelRatio || 1;
@@ -19,15 +29,17 @@ function nearestPoint(points, target) {
   return nearest;
 }
 
-export function renderTemperatureChart({canvas, empty, tooltip, rows, colors, labels, bucketSeconds, hours, formatValue}) {
+export function renderTemperatureChart({canvas, empty, tooltip, rows, colors, labels, bucketSeconds, hours, unit = '°C', formatValue}) {
   empty.style.display = rows.length ? 'none' : 'grid';
   tooltip.style.display = 'none';
   canvas.onpointermove = null;
   canvas.onpointerleave = null;
-  if (!rows.length) return;
-
   const {context, width, height} = setupCanvas(canvas);
-  const padding = {left: 42, right: 15, top: 12, bottom: 28};
+  if (!rows.length) {
+    context.clearRect(0, 0, width, height);
+    return;
+  }
+  const padding = {left: 58, right: 15, top: 12, bottom: 28};
   const groups = new Map();
   for (const row of rows) {
     if (!groups.has(row.name)) groups.set(row.name, []);
@@ -38,8 +50,11 @@ export function renderTemperatureChart({canvas, empty, tooltip, rows, colors, la
   let minTime = Math.min(...times);
   let maxTime = Math.max(...times);
   if (minTime === maxTime) maxTime += 1;
-  const minValue = Math.floor(Math.min(...values) - 2);
-  const maxValue = Math.ceil(Math.max(...values) + 2);
+  const valuePadding = unit === '°C' ? 2 : Math.max(0.05, (Math.max(...values) - Math.min(...values)) * 0.08);
+  const precision = unit === '°C' ? 0 : 2;
+  const valueScale = 10 ** precision;
+  const minValue = Math.floor((Math.min(...values) - valuePadding) * valueScale) / valueScale;
+  const maxValue = Math.ceil((Math.max(...values) + valuePadding) * valueScale) / valueScale;
   const x = value => padding.left + (value - minTime) / (maxTime - minTime) * (width - padding.left - padding.right);
   const y = value => height - padding.bottom - (value - minValue) / (maxValue - minValue) * (height - padding.top - padding.bottom);
   const tolerance = Math.max(90_000, bucketSeconds * 1_500);
@@ -58,7 +73,7 @@ export function renderTemperatureChart({canvas, empty, tooltip, rows, colors, la
       context.moveTo(padding.left, position);
       context.lineTo(width - padding.right, position);
       context.stroke();
-      context.fillText(`${value.toFixed(0)}°`, padding.left - 8, position + 4);
+      context.fillText(`${value.toFixed(precision)} ${unit}`, padding.left - 8, position + 4);
     }
     context.textAlign = 'center';
     for (let index = 0; index < 4; index += 1) {
@@ -121,7 +136,7 @@ export function renderTemperatureChart({canvas, empty, tooltip, rows, colors, la
       const marker = document.createElement('i');
       marker.style.background = colors[name];
       const value = document.createElement('b');
-      value.textContent = point && Math.abs(point.timestamp - hoverTime) <= tolerance ? formatValue(point.point.value, '°C') : '–';
+      value.textContent = point && Math.abs(point.timestamp - hoverTime) <= tolerance ? formatValue(point.point.value, unit, precision) : '–';
       line.append(marker, `${labels[name]} `, value);
       tooltip.append(line);
     }
@@ -153,5 +168,55 @@ export function renderBarChart({canvas, empty, rows}) {
     context.textAlign = 'center';
     if (rows.length <= 10 || index % Math.ceil(rows.length / 8) === 0) context.fillText(row.day.slice(5), left + barWidth * 0.35, height - 8);
     if (row.starts) context.fillText(row.starts, left + barWidth * 0.35, top - 5);
+  });
+}
+
+export function renderStateChart({canvas, empty, rows, hours}) {
+  empty.style.display = rows.length ? 'none' : 'grid';
+  const {context, width, height} = setupCanvas(canvas);
+  context.clearRect(0, 0, width, height);
+  if (!rows.length) return;
+
+  const states = STATUS_STATES;
+  const padding = {left: 100, right: 15, top: 12, bottom: 28};
+  const times = rows.map(row => Date.parse(row.timestamp_utc));
+  const minTime = Math.min(...times);
+  let maxTime = Math.max(...times);
+  if (minTime === maxTime) maxTime += 1;
+  const x = timestamp => padding.left + (timestamp - minTime) / (maxTime - minTime) * (width - padding.left - padding.right);
+  const laneHeight = (height - padding.top - padding.bottom) / states.length;
+
+  context.font = '11px system-ui';
+  context.textAlign = 'right';
+  context.textBaseline = 'middle';
+  states.forEach((state, index) => {
+    const y = padding.top + laneHeight * (index + 0.5);
+    context.fillStyle = state.color;
+    context.fillText(state.label, padding.left - 10, y);
+  });
+
+  context.textAlign = 'center';
+  context.textBaseline = 'alphabetic';
+  for (let index = 0; index < 4; index += 1) {
+    const timestamp = minTime + (maxTime - minTime) * index / 3;
+    const label = hours > 24
+      ? new Date(timestamp).toLocaleString('de-AT', {day: '2-digit', month: '2-digit', hour: '2-digit'})
+      : new Date(timestamp).toLocaleTimeString('de-AT', {hour: '2-digit', minute: '2-digit'});
+    context.fillText(label, x(timestamp), height - 7);
+  }
+
+  rows.forEach(row => {
+    const status = row.operating_status == null ? null : Number(row.operating_status);
+    states.forEach((state, index) => {
+      const active = state.label === 'HK-Pumpe' && row.heating_circuit_pump_1 != null
+        ? Boolean(row.heating_circuit_pump_1)
+        : status == null ? false : Boolean(status & (1 << state.bit));
+      if (!active) return;
+      const y = padding.top + laneHeight * (index + 0.5);
+      context.fillStyle = state.color;
+      context.beginPath();
+      context.arc(x(Date.parse(row.timestamp_utc)), y, 2.5, 0, Math.PI * 2);
+      context.fill();
+    });
   });
 }

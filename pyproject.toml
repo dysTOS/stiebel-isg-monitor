@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 stiebel-monitor = "stiebel_monitor.__main__:main"
 
 [tool.setuptools.package-data]
-stiebel_monitor = ["static/*.html", "static/*.css", "static/*.js"]
+stiebel_monitor = ["static/*.html", "static/*.css", "static/*.js", "static/*.webmanifest", "static/*.svg", "static/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

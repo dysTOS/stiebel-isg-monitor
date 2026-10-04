@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#101415">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <title>Wärmepumpe · Live</title>
   <link rel="stylesheet" href="/style.css">
 </head>
@@ -21,6 +25,7 @@
         <option value="168">7 Tage</option>
         <option value="720">30 Tage</option>
       </select>
+      <button id="install-app" class="install-pwa" type="button" hidden>App installieren</button>
       <a class="button-link" href="/registers">Register</a>
     </div>
   </header>
@@ -55,6 +60,14 @@
         <div class="panel-title"><div><p class="eyebrow">Temperaturen</p><h2>Thermischer Verlauf</h2></div><div id="temp-legend" class="legend"></div></div>
         <div class="chart-wrap"><canvas id="temperature-chart"></canvas><div id="temp-empty" class="empty">Noch keine Verlaufsdaten</div><div id="temp-tooltip" class="chart-tooltip" role="status" aria-live="polite"></div></div>
       </article>
+      <article class="card panel wide">
+        <div class="panel-title"><div><p class="eyebrow">Hydraulik</p><h2>Heizungsdruck</h2></div><div id="pressure-legend" class="legend"></div></div>
+        <div class="chart-wrap"><canvas id="pressure-chart"></canvas><div id="pressure-empty" class="empty">Noch keine Druckwerte im Zeitraum</div><div id="pressure-tooltip" class="chart-tooltip" role="status" aria-live="polite"></div></div>
+      </article>
+      <article class="card panel wide">
+        <div class="panel-title"><div><p class="eyebrow">Betrieb</p><h2>Anlagenzustände</h2></div></div>
+        <div class="chart-wrap compact"><canvas id="states-chart"></canvas><div id="states-empty" class="empty">Noch keine Statuswerte im Zeitraum</div></div>
+      </article>
       <article class="card panel">
         <div class="panel-title"><div><p class="eyebrow">Takten</p><h2>Starts pro Tag</h2></div></div>
         <div class="chart-wrap compact"><canvas id="starts-chart"></canvas><div id="starts-empty" class="empty">Noch keine vollständigen Läufe</div></div>
@@ -82,7 +95,20 @@
       </article>
     </section>
   </main>
-  <footer><span id="updated">Noch keine Daten</span><span>COP aus gerundeten Tageszählern · lokal · nur lesend</span></footer>
+  <footer><span id="updated">Noch keine Daten</span><span>COP aus gerundeten Tageszählern · lokal · nur lesend</span>
+    <details class="backup-tools">
+      <summary>Daten sichern / wiederherstellen</summary>
+      <p>Exportiert oder importiert die komplette SQLite-Datenbank.</p>
+      <a class="button-link" href="/api/backup">Datenbank herunterladen</a>
+      <form id="backup-import-form">
+        <label for="backup-file">Sicherungsdatei auswählen</label>
+        <input id="backup-file" type="file" accept=".sqlite3,.sqlite,.db,application/vnd.sqlite3,application/octet-stream" required>
+        <button id="backup-import-button" type="submit">Sicherung importieren</button>
+      </form>
+      <small id="backup-status" role="status">Beim Import werden alle aktuell gespeicherten Daten ersetzt.</small>
+    </details>
+  </footer>
+  <script src="/pwa.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

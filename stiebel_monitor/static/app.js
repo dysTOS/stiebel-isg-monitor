@@ -1,21 +1,47 @@
-import {renderBarChart, renderTemperatureChart} from '/charts.js';
+import {renderBarChart, renderStateChart, renderTemperatureChart} from '/charts.js';
 
 const COLORS = {
   outside_temperature: '#67aaf9', room_temperature_hc1: '#f1c75b', room_temperature_fek: '#e78ac3',
   room_temperature_hc1_wpm_system: '#f1c75b', actual_temperature_hc1: '#a7e22e',
   heat_pump_flow_temperature: '#ffb454', return_temperature: '#bd93f9', buffer_temperature: '#65d8d2',
-  dhw_temperature: '#ff6b6b',
+  dhw_temperature: '#ff6b6b', heating_pressure: '#66d9a8',
 };
 const LABELS = {
   outside_temperature: 'Außen', room_temperature_hc1: 'Raumfühler FE7', room_temperature_fek: 'Raumfühler FEK',
   room_temperature_hc1_wpm_system: 'Raum HK 1', actual_temperature_hc1: 'Heizkreis',
   heat_pump_flow_temperature: 'Vorlauf WP', return_temperature: 'Rücklauf', buffer_temperature: 'Puffer',
-  dhw_temperature: 'Warmwasser',
+  dhw_temperature: 'Warmwasser', heating_pressure: 'Heizungsdruck',
 };
+const CHART_VISIBILITY_KEY = 'stiebel-isg-monitor.chart-visibility.v1';
 const ENERGY_NAMES = ['heat_energy_heating_day', 'heat_energy_dhw_day', 'electric_energy_heating_day', 'electric_energy_dhw_day'];
 const $ = id => document.getElementById(id);
 let payload = null;
 let loading = false;
+let offlineSnapshot = false;
+let chartVisibility = loadChartVisibility();
+
+function loadChartVisibility() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHART_VISIBILITY_KEY) || '{}');
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function isChartVisible(name) {
+  return chartVisibility[name] !== false;
+}
+
+function setChartVisible(name, visible) {
+  chartVisibility[name] = visible;
+  try {
+    localStorage.setItem(CHART_VISIBILITY_KEY, JSON.stringify(chartVisibility));
+  } catch {
+    // The chart remains usable if browser storage is unavailable.
+  }
+  renderCharts();
+}
 
 const fmt = (value, unit = '', digits = 1) => value == null ? '–' : `${Number(value).toLocaleString('de-DE', {maximumFractionDigits: digits, minimumFractionDigits: digits})}${unit ? ` ${unit}` : ''}`;
 const date = value => value ? new Date(value).toLocaleString('de-AT', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '–';
@@ -38,8 +64,8 @@ function ageLabel(entry) {
 
 function chip(label, active, warn = false) {
   const element = document.createElement('span');
-  element.className = `chip ${active ? (warn ? 'warn' : 'active') : ''}`;
-  element.textContent = label;
+  element.className = `chip ${active == null ? 'unknown' : active ? (warn ? 'warn' : 'active') : ''}`;
+  element.textContent = active == null ? `${label} · ?` : label;
   return element;
 }
 
@@ -57,11 +83,20 @@ function renderCards() {
   setText('dhw', fmt(entryIsFresh(dhw) ? dhw.value : null, '°C'));
   setText('dhw-set', `Soll ${fmt(latest('dhw_set_temperature'), '°C')} · ${ageLabel(dhw)}`);
 
-  const status = Number(latest('operating_status') || 0);
+  const statusEntry = latestEntry('operating_status');
+  const status = latest('operating_status');
+  const pumpEntry = latestEntry('heating_circuit_pump_1');
+  const pumpStatus = entryIsFresh(pumpEntry) ? Boolean(pumpEntry.value) : status == null ? null : Boolean(status & 1);
   const chips = $('status-chips');
   chips.replaceChildren();
   [['Verdichter', 6], ['Heizen', 4], ['Warmwasser', 5], ['HK-Pumpe', 0], ['Heizstab', 3], ['Sommer', 7], ['Abtauen', 9]]
-    .forEach(([label, bit]) => chips.append(chip(label, Boolean(status & (1 << bit)), label === 'Heizstab')));
+    .forEach(([label, bit]) => {
+      const active = label === 'HK-Pumpe' ? pumpStatus : status == null ? null : Boolean(status & (1 << bit));
+      const item = chip(label, active, label === 'Heizstab');
+      if (active == null) item.title = `Betriebsstatus ${ageLabel(statusEntry).toLowerCase()}`;
+      else if (label === 'HK-Pumpe' && entryIsFresh(pumpEntry)) item.title = `Register 2509 · ${ageLabel(pumpEntry).toLowerCase()}`;
+      chips.append(item);
+    });
 
   setText('starts-today', payload.today.starts);
   setText('average-runtime', payload.today.average_minutes != null ? `${payload.today.average_minutes} min` : '–');
@@ -203,17 +238,32 @@ function renderCycling() {
 }
 
 function renderCharts() {
-  const rows = payload.series.filter(item => Object.prototype.hasOwnProperty.call(COLORS, item.name));
-  const legend = $('temp-legend');
-  legend.replaceChildren();
-  [...new Set(rows.map(item => item.name))].forEach(name => {
-    const item = document.createElement('span');
-    const marker = document.createElement('i');
-    marker.style.background = COLORS[name];
-    item.append(marker, LABELS[name]);
-    legend.append(item);
-  });
-  renderTemperatureChart({canvas: $('temperature-chart'), empty: $('temp-empty'), tooltip: $('temp-tooltip'), rows, colors: COLORS, labels: LABELS, bucketSeconds: payload.bucket_seconds, hours: payload.hours, formatValue: fmt});
+  const allRows = payload.series.filter(item => Object.prototype.hasOwnProperty.call(COLORS, item.name));
+  const temperatureNames = [...new Set(allRows.filter(item => item.name !== 'heating_pressure').map(item => item.name))];
+  const pressureNames = [...new Set(allRows.filter(item => item.name === 'heating_pressure').map(item => item.name))];
+  const renderLegend = (id, names) => {
+    const legend = $(id);
+    legend.replaceChildren();
+    names.forEach(name => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = `legend-toggle${isChartVisible(name) ? '' : ' muted'}`;
+      item.setAttribute('aria-pressed', String(isChartVisible(name)));
+      item.title = `${isChartVisible(name) ? 'Ausblenden' : 'Einblenden'}: ${LABELS[name]}`;
+      const marker = document.createElement('i');
+      marker.style.background = COLORS[name];
+      item.append(marker, LABELS[name]);
+      item.addEventListener('click', () => setChartVisible(name, !isChartVisible(name)));
+      legend.append(item);
+    });
+  };
+  renderLegend('temp-legend', temperatureNames);
+  renderLegend('pressure-legend', pressureNames);
+  const rows = allRows.filter(item => item.name !== 'heating_pressure' && isChartVisible(item.name));
+  const pressureRows = allRows.filter(item => item.name === 'heating_pressure' && isChartVisible(item.name));
+  renderTemperatureChart({canvas: $('temperature-chart'), empty: $('temp-empty'), tooltip: $('temp-tooltip'), rows, colors: COLORS, labels: LABELS, bucketSeconds: payload.bucket_seconds, hours: payload.hours, unit: '°C', formatValue: fmt});
+  renderTemperatureChart({canvas: $('pressure-chart'), empty: $('pressure-empty'), tooltip: $('pressure-tooltip'), rows: pressureRows, colors: COLORS, labels: LABELS, bucketSeconds: payload.bucket_seconds, hours: payload.hours, unit: 'bar', formatValue: fmt});
+  renderStateChart({canvas: $('states-chart'), empty: $('states-empty'), rows: payload.status_samples, hours: payload.hours});
   renderBarChart({canvas: $('starts-chart'), empty: $('starts-empty'), rows: payload.daily});
 }
 
@@ -239,7 +289,10 @@ function renderRuns() {
   body.replaceChildren();
   payload.runs.forEach(run => {
     const row = document.createElement('tr');
-    [date(run.started_utc) + (run.complete ? '' : ' *'), run.dhw ? 'Warmwasser' : run.heating ? 'Heizen' : 'Sonstiges', run.duration_seconds != null ? `${Math.round(run.duration_seconds / 60)} min` : '–'].forEach(value => {
+    const phases = run.phases?.length ? run.phases : [run];
+    const modes = phases.map(phase => phase.dhw ? 'Warmwasser' : phase.heating ? 'Heizen' : 'Sonstiges')
+      .filter((mode, index, values) => index === 0 || mode !== values[index - 1]);
+    [date(run.started_utc) + (run.complete ? '' : ' *'), modes.join(' → '), run.duration_seconds != null ? `${Math.round(run.duration_seconds / 60)} min` : '–'].forEach(value => {
       const cell = document.createElement('td');
       cell.textContent = value;
       row.append(cell);
@@ -277,10 +330,10 @@ function renderDetails() {
 function renderConnection() {
   const element = $('connection');
   const fresh = payload.monitor.last_success && dataAge(payload.monitor.last_success) <= payload.stale_after_seconds * 1000;
-  const online = payload.monitor.connected && fresh;
+  const online = !offlineSnapshot && payload.monitor.connected && fresh;
   element.className = `connection ${online ? 'online' : 'offline'}`;
-  element.querySelector('span').textContent = online ? 'ISG verbunden' : payload.monitor.polling ? 'Messung läuft' : 'ISG nicht aktuell';
-  setText('updated', payload.monitor.last_success ? `Letzte Messung ${date(payload.monitor.last_success)} · ${payload.timezone}` : 'Noch keine erfolgreiche Messung');
+  element.querySelector('span').textContent = offlineSnapshot ? 'Offline · gespeicherte Daten' : online ? 'ISG verbunden' : payload.monitor.polling ? 'Messung läuft' : 'ISG nicht aktuell';
+  setText('updated', offlineSnapshot ? `Gespeicherter Stand ${date(payload.generated_at)} · ${payload.timezone}` : payload.monitor.last_success ? `Letzte Messung ${date(payload.monitor.last_success)} · ${payload.timezone}` : 'Noch keine erfolgreiche Messung');
 }
 
 function render() {
@@ -294,6 +347,7 @@ async function load() {
   try {
     const response = await fetch(`/api/dashboard?hours=${$('range').value}`, {cache: 'no-store'});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    offlineSnapshot = response.headers.get('X-Offline-Cache') === 'true';
     payload = await response.json();
     render();
   } catch (error) {
@@ -308,5 +362,31 @@ async function load() {
 
 $('range').addEventListener('change', load);
 window.addEventListener('resize', () => payload && renderCharts());
+$('backup-import-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const file = $('backup-file').files[0];
+  if (!file) return;
+  if (!window.confirm(`Die Sicherung „${file.name}“ importieren? Dabei werden alle aktuell gespeicherten Daten unwiderruflich durch den Inhalt der Sicherung ersetzt.`)) return;
+  const button = $('backup-import-button');
+  const status = $('backup-status');
+  button.disabled = true;
+  status.textContent = 'Sicherung wird geprüft und importiert …';
+  try {
+    const response = await fetch('/api/backup/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/octet-stream'},
+      body: file,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    status.textContent = 'Sicherung importiert.';
+    $('backup-file').value = '';
+    await load();
+  } catch (error) {
+    status.textContent = `Import fehlgeschlagen: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+});
 load();
 setInterval(load, 30000);
