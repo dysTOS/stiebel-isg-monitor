@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from stiebel_monitor.monitor import Monitor
 from stiebel_monitor.registers import ON_DEMAND_READ_BLOCKS, REGISTERS
@@ -14,6 +15,7 @@ from stiebel_monitor.web import DashboardServer, RegisterReadBusy, dashboard_dat
 class FakeClient:
     def __init__(self):
         self.compressor = True
+        self.status = 1 << 6
         self.calls = 0
         self.fail_starts = set()
 
@@ -24,7 +26,7 @@ class FakeClient:
         values = [32768] * count
         known = {
             507: 149, 518: 236, 522: 479, 523: 470, 584: 215,
-            2501: 1 << 6 if self.compressor else 0,
+            2501: self.status if self.compressor else 0,
             3644: 116, 3645: 118,
         }
         for address, value in known.items():
@@ -74,6 +76,163 @@ class MonitorTest(unittest.TestCase):
             db.close()
             self.assertIsNone(row[0])
             self.assertIn("read failed", row[1])
+
+    def test_mode_change_while_compressor_runs_starts_a_new_phase(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = Path(folder) / "measurements.sqlite3"
+            monitor = Monitor("example.invalid", db_path)
+            monitor.client = FakeClient()
+            store = Store(db_path)
+            monitor.client.status = (1 << 6) | (1 << 5)
+            with patch("stiebel_monitor.monitor.utc_now", side_effect=[
+                "2026-09-26T16:44:00+00:00", "2026-09-26T16:45:00+00:00",
+            ]):
+                monitor.poll_once(store)
+                monitor.client.status = (1 << 6) | (1 << 4)
+                monitor.poll_once(store)
+            rows = store.db.execute("""
+                SELECT started_utc, ended_utc, heating, dhw, complete
+                FROM compressor_runs ORDER BY rowid
+            """).fetchall()
+            phases = store.db.execute("""
+                SELECT started_utc, ended_utc, heating, dhw, complete
+                FROM compressor_phases ORDER BY rowid
+            """).fetchall()
+            store.close()
+
+            self.assertEqual(rows, [
+                ("2026-09-26T16:44:00+00:00", None, 0, 1, 0),
+            ])
+            self.assertEqual(phases, [
+                ("2026-09-26T16:44:00+00:00", "2026-09-26T16:45:00+00:00", 0, 1, 0),
+                ("2026-09-26T16:45:00+00:00", None, 1, 0, 1),
+            ])
+
+    def test_status_gap_splits_phases_but_not_runs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = Path(folder) / "measurements.sqlite3"
+            monitor = Monitor("example.invalid", db_path, interval=60)
+            monitor.client = FakeClient()
+            store = Store(db_path)
+            monitor.client.status = (1 << 6) | (1 << 5)
+            with patch("stiebel_monitor.monitor.utc_now", side_effect=[
+                "2026-09-26T16:44:00+00:00", "2026-09-26T17:00:00+00:00",
+            ]):
+                monitor.poll_once(store)
+                monitor.client.status = (1 << 6) | (1 << 4)
+                monitor.poll_once(store)
+            rows = store.db.execute("""
+                SELECT started_utc, ended_utc, duration_seconds, heating, dhw, complete
+                FROM compressor_runs ORDER BY rowid
+            """).fetchall()
+            phases = store.db.execute("""
+                SELECT started_utc, ended_utc, duration_seconds, heating, dhw, complete
+                FROM compressor_phases ORDER BY rowid
+            """).fetchall()
+            events = store.db.execute("SELECT event FROM connection_events WHERE event='status_gap'").fetchall()
+            store.close()
+
+            self.assertEqual(rows, [
+                ("2026-09-26T16:44:00+00:00", None, None, 0, 1, 0),
+            ])
+            self.assertEqual(phases, [
+                ("2026-09-26T16:44:00+00:00", "2026-09-26T16:44:00+00:00", 0.0, 0, 1, 0),
+                ("2026-09-26T17:00:00+00:00", None, None, 1, 0, 0),
+            ])
+            self.assertEqual(events, [("status_gap",)])
+
+    def test_same_mode_status_gap_does_not_invent_another_start(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = Path(folder) / "measurements.sqlite3"
+            monitor = Monitor("example.invalid", db_path, interval=60)
+            monitor.client = FakeClient()
+            store = Store(db_path)
+            heating = (1 << 6) | (1 << 4)
+            with patch("stiebel_monitor.monitor.utc_now", side_effect=[
+                "2026-09-26T16:43:00+00:00",
+                "2026-09-26T16:44:00+00:00",
+                "2026-09-26T17:00:00+00:00",
+            ]):
+                monitor.client.status = 0
+                monitor.poll_once(store)
+                monitor.client.status = heating
+                monitor.poll_once(store)
+                monitor.poll_once(store)
+            rows = store.db.execute("""
+                SELECT started_utc, ended_utc, heating, dhw, complete
+                FROM compressor_runs ORDER BY rowid
+            """).fetchall()
+            phases = store.db.execute("""
+                SELECT started_utc, ended_utc, heating, dhw, complete
+                FROM compressor_phases ORDER BY rowid
+            """).fetchall()
+            store.close()
+
+            self.assertEqual(rows, [
+                ("2026-09-26T16:44:00+00:00", None, 1, 0, 0),
+            ])
+            self.assertEqual(phases, [
+                ("2026-09-26T16:44:00+00:00", None, 1, 0, 0),
+            ])
+
+    def test_restart_reconciles_mode_change_in_open_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = Path(folder) / "measurements.sqlite3"
+            store = Store(db_path)
+            store.start_run("2026-09-26T16:44:00+00:00", False, True, 1)
+            status_reg = REGISTERS[2501]
+            store.measurement("2026-09-26T16:44:00+00:00", status_reg, 96, 96)
+            store.measurement("2026-09-26T16:45:00+00:00", status_reg, 80, 80)
+            store.commit()
+            monitor = Monitor("example.invalid", db_path)
+            monitor.restore_open_run(store)
+            rows = store.db.execute("""
+                SELECT started_utc, ended_utc, heating, dhw, complete
+                FROM compressor_runs ORDER BY rowid
+            """).fetchall()
+            phases = store.db.execute("""
+                SELECT started_utc, ended_utc, heating, dhw, complete
+                FROM compressor_phases ORDER BY rowid
+            """).fetchall()
+            store.close()
+
+            self.assertEqual(rows, [
+                ("2026-09-26T16:44:00+00:00", None, 0, 1, 1),
+            ])
+            self.assertEqual(phases, [
+                ("2026-09-26T16:44:00+00:00", "2026-09-26T16:45:00+00:00", 0, 1, 1),
+                ("2026-09-26T16:45:00+00:00", None, 1, 0, 1),
+            ])
+
+    def test_restart_repairs_legacy_mode_split(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = Path(folder) / "measurements.sqlite3"
+            store = Store(db_path)
+            first = "2026-09-26T16:44:00+00:00"
+            boundary = "2026-09-26T16:45:00+00:00"
+            store.run(first, boundary, 60, False, True, 0)
+            store.start_run(boundary, True, False, 0)
+            store.event(boundary, "status_gap", f"{boundary} -> {boundary}")
+            status_reg = REGISTERS[2501]
+            store.measurement(boundary, status_reg, 80, 80)
+            store.commit()
+            monitor = Monitor("example.invalid", db_path)
+            monitor.restore_open_run(store)
+            rows = store.db.execute("""
+                SELECT started_utc, ended_utc, heating, dhw, complete
+                FROM compressor_runs ORDER BY rowid
+            """).fetchall()
+            phases = store.db.execute("""
+                SELECT started_utc, ended_utc, run_started_utc, heating, dhw, complete
+                FROM compressor_phases ORDER BY rowid
+            """).fetchall()
+            store.close()
+
+            self.assertEqual(rows, [(first, None, 0, 1, 0)])
+            self.assertEqual(phases, [
+                (first, boundary, first, 0, 1, 0),
+                (boundary, None, first, 1, 0, 0),
+            ])
 
     def test_today_uses_local_calendar_day_not_selected_range(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -20,12 +20,13 @@ class Monitor:
         self.interval = max(1, interval)
         self.stop_event = threading.Event()
         self.state_lock = threading.Lock()
+        self.database_lock = threading.RLock()
         self.modbus_lock = threading.Lock()
         self.state = {"connected": False, "polling": False, "last_poll": None, "last_success": None, "error": None}
         self.previous_status = None
+        self.last_status_at = None
         self.run_start = None
-        self.run_complete = True
-        self.restored_open = False
+        self.phase_start = None
         self.previous_counters = {}
 
     def snapshot(self):
@@ -35,6 +36,102 @@ class Monitor:
     def _set_state(self, **values):
         with self.state_lock:
             self.state.update(values)
+
+    @staticmethod
+    def _status(value):
+        value = int(value)
+        return (
+            bool(value & (1 << STATUS_BITS["compressor"])),
+            bool(value & (1 << STATUS_BITS["heating"])),
+            bool(value & (1 << STATUS_BITS["dhw"])),
+        )
+
+    @staticmethod
+    def _seconds(start, end):
+        return max(0, (dt.datetime.fromisoformat(end) - dt.datetime.fromisoformat(start)).total_seconds())
+
+    @property
+    def status_gap_seconds(self):
+        return max(180, self.interval * 3)
+
+    def _finish_run(self, store, ended, complete=None):
+        if not self.run_start:
+            return
+        store.finish_run(self.run_start, ended, self._seconds(self.run_start, ended), complete)
+        self.run_start = None
+
+    def _finish_phase(self, store, ended, complete=None):
+        if not self.phase_start:
+            return
+        store.finish_phase(self.phase_start, ended, self._seconds(self.phase_start, ended), complete)
+        self.phase_start = None
+
+    def _start_run(self, store, timestamp, status, complete):
+        self.run_start = timestamp
+        self.phase_start = timestamp
+        store.start_run(timestamp, status[1], status[2], complete)
+        store.start_phase(timestamp, timestamp, status[1], status[2], complete)
+
+    def _start_phase(self, store, timestamp, status, complete):
+        self.phase_start = timestamp
+        store.start_phase(timestamp, self.run_start, status[1], status[2], complete)
+
+    def _process_status(self, store, timestamp, value, record_gap=True):
+        current = self._status(value)
+        previous = self.previous_status
+        gap = False
+        if self.last_status_at is not None:
+            gap = self._seconds(self.last_status_at, timestamp) > self.status_gap_seconds
+
+        if gap:
+            if previous and previous[0] and not current[0]:
+                self._finish_phase(store, self.last_status_at, 0)
+                self._finish_run(store, self.last_status_at, 0)
+            elif previous and previous[0] and current[0] and current[1:] != previous[1:]:
+                store.mark_run_incomplete(self.run_start)
+                self._finish_phase(store, self.last_status_at, 0)
+                self._start_phase(store, timestamp, current, 0)
+            elif previous and previous[0] and current[0] and self.run_start:
+                store.mark_run_incomplete(self.run_start)
+                if self.phase_start:
+                    store.mark_phase_incomplete(self.phase_start)
+            elif current[0]:
+                self._start_run(store, timestamp, current, 0)
+            if record_gap:
+                store.event(timestamp, "status_gap", f"{self.last_status_at} -> {timestamp}")
+        elif current[0] and previous and previous[0] and current[1:] != previous[1:]:
+            self._finish_phase(store, timestamp)
+            self._start_phase(store, timestamp, current, 1)
+        elif current[0] and not (previous and previous[0]):
+            self._start_run(store, timestamp, current, int(previous is not None))
+        elif not current[0] and previous and previous[0]:
+            self._finish_phase(store, timestamp)
+            self._finish_run(store, timestamp)
+
+        self.previous_status = current
+        self.last_status_at = timestamp
+
+    def restore_open_run(self, store):
+        """Restore and reconcile an open run from persisted status samples."""
+        store.repair_mode_splits()
+        open_run = store.open_run()
+        if not open_run:
+            store.commit()
+            return
+        self.run_start = open_run[0]
+        open_phase = store.open_phase(self.run_start)
+        if open_phase is None:
+            self.phase_start = self.run_start
+            store.start_phase(self.phase_start, self.run_start, open_run[1], open_run[2], open_run[3])
+            phase = (self.phase_start, open_run[1], open_run[2])
+        else:
+            self.phase_start = open_phase[0]
+            phase = open_phase
+        self.previous_status = (True, bool(phase[1]), bool(phase[2]))
+        self.last_status_at = self.phase_start
+        for timestamp, value in store.status_samples_since(self.phase_start):
+            self._process_status(store, timestamp, value, record_gap=False)
+        store.commit()
 
     def poll_once(self, store):
         timestamp = utc_now()
@@ -85,31 +182,7 @@ class Monitor:
 
         status = values.get(2501)
         if status is not None:
-            status = int(status)
-            compressor = bool(status & (1 << STATUS_BITS["compressor"]))
-            heating = bool(status & (1 << STATUS_BITS["heating"]))
-            dhw = bool(status & (1 << STATUS_BITS["dhw"]))
-            if self.restored_open:
-                if compressor:
-                    self.previous_status = (True, heating, dhw)
-                else:
-                    store.finish_run(self.run_start, timestamp, None, 0)
-                    self.run_start = None
-                    self.previous_status = (False, heating, dhw)
-                self.restored_open = False
-            elif compressor and not (self.previous_status and self.previous_status[0]):
-                self.run_start = timestamp
-                self.run_complete = self.previous_status is not None
-                store.start_run(timestamp, heating, dhw, int(self.run_complete))
-                self.previous_status = (compressor, heating, dhw)
-            elif not compressor and self.previous_status and self.previous_status[0] and self.run_start:
-                start_time = dt.datetime.fromisoformat(self.run_start)
-                end_time = dt.datetime.fromisoformat(timestamp)
-                store.finish_run(self.run_start, timestamp, (end_time - start_time).total_seconds())
-                self.run_start = None
-                self.previous_status = (compressor, heating, dhw)
-            else:
-                self.previous_status = (compressor, heating, dhw)
+            self._process_status(store, timestamp, status)
 
         if errors:
             detail = "; ".join(errors)
@@ -122,16 +195,14 @@ class Monitor:
 
     def run(self):
         store = Store(self.db_path)
-        open_run = store.open_run()
-        if open_run:
-            self.run_start = open_run[0]
-            self.run_complete = False
-            self.restored_open = True
+        with self.database_lock:
+            self.restore_open_run(store)
         try:
             while not self.stop_event.is_set():
                 started = time.monotonic()
                 try:
-                    self.poll_once(store)
+                    with self.database_lock:
+                        self.poll_once(store)
                 except Exception as exc:
                     timestamp = utc_now()
                     store.event(timestamp, "poll_error", repr(exc))

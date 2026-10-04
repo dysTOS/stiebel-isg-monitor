@@ -101,6 +101,7 @@ REGISTERS = {
     3645: Register(3645, "compressor_dhw_hours_wpm_system_hp1", "h", category="counter", profile="WPMsystem"),
     2502: Register(2502, "power_off_status", category="status"),
     2503: Register(2503, "component_status", category="status"),
+    2509: Register(2509, "heating_circuit_pump_1", category="status", profile="WPMsystem"),
 }
 
 STATUS_BITS = {"heating": 4, "dhw": 5, "compressor": 6}
@@ -150,6 +151,6 @@ for circuit in range(3, 6):
     REGISTERS[actual_address] = Register(actual_address, f"actual_temperature_hc{circuit}", "°C", 0.1, True, "temperature", "WPMsystem")
     REGISTERS[actual_address + 1] = Register(actual_address + 1, f"set_temperature_hc{circuit}", "°C", 0.1, True, "temperature", "WPMsystem")
 
-OPTIONAL_READ_BLOCKS = ((524, 18), (584, 20), (609, 7), (3644, 2))
-ON_DEMAND_READ_BLOCKS = ((501, 48), (549, 35), (584, 32), (2501, 5), (3501, 21), (3539, 9), (3644, 2))
+OPTIONAL_READ_BLOCKS = ((524, 18), (584, 20), (609, 7), (2509, 1), (3644, 2))
+ON_DEMAND_READ_BLOCKS = ((501, 48), (549, 35), (584, 32), (2501, 5), (2509, 1), (3501, 21), (3539, 9), (3644, 2))
 READ_REGISTERS = tuple(REGISTERS)
