@@ -13,11 +13,40 @@ python3 -m stiebel_monitor serve
 ```
 
 Der letzte Befehl startet gleichzeitig das Monitoring und das lokale Dashboard unter
-<http://localhost:8080>. Es werden keine externen Webdienste, CDNs oder JavaScript-Pakete
+<http://localhost:8081>. Es werden keine externen Webdienste, CDNs oder JavaScript-Pakete
 geladen. Für den Zugriff von anderen Geräten im Heimnetz zusätzlich `--listen 0.0.0.0`
 angeben; das Dashboard hat keine Anmeldung und sollte nicht ins Internet freigegeben werden.
 Kalendertage werden in der über `STIEBEL_TIMEZONE` konfigurierten Zeitzone ausgewertet;
 der Standard ist `Europe/Vienna`.
+
+## Progressive Web App
+
+Das Dashboard lässt sich über den Browser als App installieren. Es speichert die App-Oberfläche
+und den zuletzt geladenen Dashboard-Snapshot für die Offline-Ansicht. Live-Registerabfragen
+sowie Datenbank-Import und -Export benötigen weiterhin eine Verbindung zum Server. Auf demselben
+Gerät funktioniert die Installation unter `http://localhost:8081`; für den Zugriff und die
+Installation von anderen Geräten ist HTTPS erforderlich.
+
+## Docker
+
+Docker Compose startet Dashboard und Logger gemeinsam. Lege zuerst die Konfiguration an
+und trage die IP-Adresse des ISG ein:
+
+```bash
+cp .env.example .env
+# STIEBEL_ISG_HOST in .env eintragen
+docker compose up -d --build
+```
+
+Das Dashboard ist danach unter <http://localhost:8081> erreichbar. Die SQLite-Datenbank
+liegt in einem verwalteten Volume und bleibt bei Container-Neuerstellung und Updates
+erhalten. `docker compose down` entfernt den Container, aber nicht das Daten-Volume;
+`docker compose down -v` löscht auch die gespeicherten Messdaten.
+
+Im eingeklappten Bereich **Daten sichern / wiederherstellen** im Seitenfuß kannst du eine
+vollständige SQLite-Sicherung herunterladen oder importieren. Der Import prüft die Datei
+und ersetzt anschließend alle gespeicherten Daten; vor dem Start erscheint eine
+Bestätigungswarnung. Uploads sind auf 512 MB begrenzt.
 
 Über den Button **Register** öffnet sich eine Diagnoseansicht. Sie liest die bekannten
 Register erst beim Aufruf aus, kennzeichnet das jeweilige WPM-Profil und hält das Ergebnis
@@ -40,9 +69,10 @@ Die Dokumentation nennt für das klassische ISG web/plus eine Modbus-Softwareerw
 ## Sicherheit und Datenqualität
 
 - UTC-Zeitstempel (`timestamp_utc`) und lokale Laufzeitdiagnosen werden in SQLite gespeichert.
-- Jeder Messwert enthält Rohwert, dekodierten Wert und Fehlertext.
+- Historisch gespeichert werden die Dashboard-Verläufe, die Betriebszustände und die dafür angezeigten Zähler. Die übrigen Register liest die Diagnoseansicht bei Bedarf frisch aus.
+- Rohwerte für nicht verfügbare Register (`32768`) und wiederholte Lesefehler werden nur gespeichert, wenn sich der Zustand ändert.
 - Kommunikationsfehler werden als `connection_events` abgelegt; der Logger läuft weiter und verbindet sich neu.
-- Verdichterstarts werden aus einer Flanke `2501 & (1 << 6)` abgeleitet. Beginnt die Beobachtung mitten in einem Lauf, wird dieser als unvollständig markiert.
+- Verdichterstarts werden ausschließlich aus einer Flanke `2501 & (1 << 6)` abgeleitet. Direkte Wechsel zwischen Warmwasser und Heizen werden als Phasen innerhalb desselben Verdichterlaufs gespeichert. Beginnt die Beobachtung mitten in einem Lauf oder liegt zwischen zwei Statuswerten eine längere Messlücke, werden die betroffenen Daten als unvollständig markiert, ohne einen zusätzlichen Start anzunehmen.
 - Zähler werden als Snapshots gespeichert. Rücksetzungen/Überläufe werden als `counter_events` erkannt, nicht stillschweigend verrechnet.
 
 Historische Starts liefern keinen Verlauf der vergangenen Einzellaufzeiten. Erst die laufende Aufzeichnung kann Takten zuverlässig auswerten.

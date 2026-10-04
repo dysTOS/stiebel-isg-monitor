@@ -1,0 +1,17 @@
+services:
+  stiebel-monitor:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      STIEBEL_DB_PATH: /app/data/measurements.sqlite3
+      STIEBEL_WEB_LISTEN: 0.0.0.0
+      STIEBEL_WEB_PORT: 8081
+    ports:
+      - "${STIEBEL_WEB_PORT:-8081}:8081"
+    volumes:
+      - monitor-data:/app/data
+
+volumes:
+  monitor-data:

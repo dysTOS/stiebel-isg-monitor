@@ -135,7 +135,7 @@ def main():
     serve_parser = commands.add_parser("serve", help="Monitoring und Web-Dashboard starten")
     add_monitor_options(serve_parser)
     serve_parser.add_argument("--listen", default=os.environ.get("STIEBEL_WEB_LISTEN", "127.0.0.1"), help="Web-Bind-Adresse; für LAN: 0.0.0.0")
-    serve_parser.add_argument("--web-port", type=int, default=env_int("STIEBEL_WEB_PORT", 8080))
+    serve_parser.add_argument("--web-port", type=int, default=env_int("STIEBEL_WEB_PORT", 8081))
     serve_parser.set_defaults(func=serve)
     args = parser.parse_args()
     if args.command in ("probe", "log", "serve") and not args.host:
