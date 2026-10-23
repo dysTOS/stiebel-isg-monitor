@@ -21,6 +21,7 @@ SERIES_NAMES = (
 )
 HISTORICAL_MEASUREMENT_NAMES = frozenset((
     *SERIES_NAMES,
+    "room_set_temperature_hc1_wpm_system",
     "heat_pump_flow_temperature_1", "set_temperature_hc1_alt",
     "operating_status", "heating_circuit_pump_1", "fault_status",
     "heat_energy_heating_day", "heat_energy_dhw_day", "electric_energy_heating_day", "electric_energy_dhw_day",

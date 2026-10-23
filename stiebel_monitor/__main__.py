@@ -85,9 +85,9 @@ def log(args):
 
 def serve(args):
     monitor = build_monitor(args)
+    server = make_server(args.listen, args.web_port, args.db, monitor)
     thread = threading.Thread(target=monitor.run, name="isg-monitor", daemon=True)
     thread.start()
-    server = make_server(args.listen, args.web_port, args.db, monitor)
     shown_host = "localhost" if args.listen in ("0.0.0.0", "127.0.0.1") else args.listen
     print(f"Monitoring {args.host}:{args.port} alle {args.interval}s")
     print(f"Dashboard: http://{shown_host}:{args.web_port}")

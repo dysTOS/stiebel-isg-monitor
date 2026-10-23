@@ -1,4 +1,4 @@
-import {renderBarChart, renderStateChart, renderTemperatureChart} from '/charts.js';
+import {renderBarChart, renderEnergyHistoryChart, renderStateChart, renderTemperatureChart} from '/charts.js';
 
 const COLORS = {
   outside_temperature: '#67aaf9', room_temperature_hc1: '#f1c75b', room_temperature_fek: '#e78ac3',
@@ -58,7 +58,7 @@ function ageLabel(entry) {
   if (entry.value == null) return entry.raw_value === 32768 ? 'Nicht verfügbar' : 'Kein Wert';
   const seconds = Math.max(0, Math.round(dataAge(entry.timestamp_utc) / 1000));
   if (seconds > payload.stale_after_seconds) return `Veraltet · ${date(entry.timestamp_utc)}`;
-  if (seconds < 90) return 'Gerade gemessen';
+  if (seconds < 90) return `Messung ${date(entry.timestamp_utc)}`;
   return `Vor ${Math.round(seconds / 60)} min`;
 }
 
@@ -72,16 +72,36 @@ function chip(label, active, warn = false) {
 function renderCards() {
   const outside = latestEntry('outside_temperature');
   const room = firstEntry('room_temperature_hc1_wpm_system', 'room_temperature_hc1', 'room_temperature_fek');
+  const roomTargetNames = {
+    room_temperature_hc1_wpm_system: ['room_set_temperature_hc1_wpm_system'],
+    room_temperature_hc1: ['room_set_temperature_fe7'],
+    room_temperature_fek: ['room_set_temperature_fek'],
+  };
+  const heatingCircuit = firstEntry('actual_temperature_hc1');
+  const heatingCircuitTarget = firstEntry('set_temperature_hc1', 'set_temperature_hc1_alt');
+  const buffer = firstEntry('buffer_temperature');
+  const bufferTarget = firstEntry('buffer_set_temperature');
   const flow = firstEntry('flow_temperature', 'heat_pump_flow_temperature', 'heat_pump_flow_temperature_1');
-  const dhw = latestEntry('dhw_temperature');
+  const returnTemperature = latest('return_temperature');
+  const dhw = firstEntry('dhw_temperature');
+  const dhwTarget = firstEntry('dhw_set_temperature');
+  const supplementary = (actual, target) => {
+    if (!target) return 'Istwert';
+    if (!actual) return `Soll ${fmt(target.value, '°C')}`;
+    return `Soll ${fmt(target.value, '°C')} · Abweichung ${fmt(actual.value - target.value, 'K')}`;
+  };
   setText('outside', fmt(entryIsFresh(outside) ? outside.value : null, '°C'));
-  setText('outside-meta', `Außentemperatur · ${ageLabel(outside)}`);
+  setText('outside-meta', 'Außentemperatur');
   setText('room', fmt(room?.value, '°C'));
-  setText('room-meta', `${room ? LABELS[room.name] : 'Raumtemperatur'} · ${ageLabel(room)}`);
+  setText('room-meta', `${room ? LABELS[room.name] : 'Raumtemperatur'}${room ? ` · ${supplementary(room, firstEntry(...(roomTargetNames[room.name] || [])))}` : ''}`);
+  setText('heating-circuit', fmt(heatingCircuit?.value, '°C'));
+  setText('heating-circuit-meta', supplementary(heatingCircuit, heatingCircuitTarget));
+  setText('buffer', fmt(buffer?.value, '°C'));
+  setText('buffer-meta', supplementary(buffer, bufferTarget));
   setText('flow', fmt(flow?.value, '°C'));
-  setText('delta', `Differenz ${flow && latest('return_temperature') != null ? fmt(flow.value - latest('return_temperature'), 'K') : '–'} · ${ageLabel(flow)}`);
-  setText('dhw', fmt(entryIsFresh(dhw) ? dhw.value : null, '°C'));
-  setText('dhw-set', `Soll ${fmt(latest('dhw_set_temperature'), '°C')} · ${ageLabel(dhw)}`);
+  setText('delta', `Differenz ${flow && returnTemperature != null ? fmt(flow.value - returnTemperature, 'K') : '–'}`);
+  setText('dhw', fmt(dhw?.value, '°C'));
+  setText('dhw-meta', supplementary(dhw, dhwTarget));
 
   const statusEntry = latestEntry('operating_status');
   const status = latest('operating_status');
@@ -105,30 +125,6 @@ function renderCards() {
   const heat = complete ? energy.heat_energy_heating_day + energy.heat_energy_dhw_day : null;
   const power = complete ? energy.electric_energy_heating_day + energy.electric_energy_dhw_day : null;
   setText('cop', heat != null && power > 0 ? (heat / power).toFixed(2) : '–');
-}
-
-function renderTargets() {
-  const box = $('targets');
-  box.replaceChildren();
-  const targets = [
-    ['Heizkreis HK 1', ['actual_temperature_hc1'], ['set_temperature_hc1', 'set_temperature_hc1_alt']],
-    ['Puffer', ['buffer_temperature'], ['buffer_set_temperature']],
-    ['Warmwasser', ['dhw_temperature'], ['dhw_set_temperature']],
-  ];
-  for (const [label, actualNames, targetNames] of targets) {
-    const actual = firstEntry(...actualNames);
-    const target = firstEntry(...targetNames);
-    const item = document.createElement('div');
-    item.className = 'target-item';
-    const title = document.createElement('span');
-    title.textContent = label;
-    const values = document.createElement('strong');
-    values.textContent = `${fmt(actual?.value, '°C')} → ${fmt(target?.value, '°C')}`;
-    const detail = document.createElement('small');
-    detail.textContent = actual && target ? `Abweichung ${fmt(actual.value - target.value, 'K')} · ${ageLabel(actual)}` : 'Soll- oder Istwert nicht verfügbar';
-    item.append(title, values, detail);
-    box.append(item);
-  }
 }
 
 function appendAlert(box, kind, title, detail) {
@@ -187,39 +183,36 @@ function dailyEnergy(values) {
 }
 
 function renderEnergyHistory() {
-  const box = $('energy-history');
-  box.replaceChildren();
+  const legend = $('energy-history-legend');
+  legend.replaceChildren();
   const byDay = {};
   payload.energy_daily.forEach(item => {
     if (!byDay[item.day]) byDay[item.day] = {};
     byDay[item.day][item.name] = item.value;
   });
-  const days = Object.entries(byDay).sort(([left], [right]) => left.localeCompare(right)).slice(-14);
-  if (!days.length) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-inline';
-    empty.textContent = 'Noch keine Energiehistorie gespeichert';
-    box.append(empty);
-    return;
-  }
-  days.forEach(([day, values], index) => {
+  const rows = Object.entries(byDay).sort(([left], [right]) => left.localeCompare(right)).map(([day, values]) => {
+    const value = name => Object.hasOwn(values, name) && values[name] != null ? Number(values[name]) : null;
     const current = dailyEnergy(values);
-    const previous = index ? dailyEnergy(days[index - 1][1]) : null;
-    const item = document.createElement('div');
-    item.className = 'history-item';
-    const texts = [
-      [document.createElement('strong'), new Date(`${day}T12:00:00`).toLocaleDateString('de-AT', {day: '2-digit', month: '2-digit'})],
-      [document.createElement('span'), `Wärme ${fmt(current.heat, 'kWh')}`],
-      [document.createElement('span'), `Strom ${fmt(current.power, 'kWh')}`],
-      [document.createElement('span'), `COP ${current.heat != null && current.power > 0 ? (current.heat / current.power).toFixed(2) : '–'}`],
-    ];
-    texts.forEach(([element, text]) => { element.textContent = text; item.append(element); });
-    const comparison = document.createElement('small');
-    comparison.textContent = previous && current.heat != null && current.power != null && previous.heat != null && previous.power != null
-      ? `ggü. Vortag: Wärme ${fmt(current.heat - previous.heat, 'kWh')} · Strom ${fmt(current.power - previous.power, 'kWh')}`
-      : 'Kein vollständiger Vortagsvergleich';
-    item.append(comparison);
-    box.append(item);
+    return {
+      day,
+      heatHeating: value('heat_energy_heating_day'),
+      heatDhw: value('heat_energy_dhw_day'),
+      electricHeating: value('electric_energy_heating_day'),
+      electricDhw: value('electric_energy_dhw_day'),
+      cop: current.heat != null && current.power > 0 ? current.heat / current.power : null,
+    };
+  });
+  renderEnergyHistoryChart({canvas: $('energy-history-chart'), empty: $('energy-history-empty'), tooltip: $('energy-history-tooltip'), rows});
+  [
+    ['Wärme Heizen', '#a7e22e'], ['Wärme Warmwasser', '#d9f99d'],
+    ['Strom Heizen', '#67aaf9'], ['Strom Warmwasser', '#65d8d2'], ['COP', '#ffb454'],
+  ].forEach(([label, color]) => {
+    const item = document.createElement('span');
+    const marker = document.createElement('i');
+    marker.style.background = color;
+    if (label === 'COP') marker.className = 'legend-line';
+    item.append(marker, label);
+    legend.append(item);
   });
 }
 
@@ -317,11 +310,8 @@ function renderDetails() {
     const term = document.createElement('dt');
     const detail = document.createElement('dd');
     const entry = firstEntry(...names);
-    const age = document.createElement('small');
     term.textContent = label;
     detail.textContent = fmt(entry?.value, unit, unit === 'bar' ? 2 : 1);
-    age.textContent = ageLabel(entry || latestEntry(names[0]));
-    detail.append(age);
     wrapper.append(term, detail);
     box.append(wrapper);
   });
@@ -337,7 +327,7 @@ function renderConnection() {
 }
 
 function render() {
-  renderConnection(); renderCards(); renderTargets(); renderAlerts(); renderEventHistory(); renderEnergyHistory();
+  renderConnection(); renderCards(); renderAlerts(); renderEventHistory(); renderEnergyHistory();
   renderCycling(); renderCharts(); renderEnergy(); renderRuns(); renderDetails();
 }
 
@@ -345,7 +335,7 @@ async function load() {
   if (loading) return;
   loading = true;
   try {
-    const response = await fetch(`/api/dashboard?hours=${$('range').value}`, {cache: 'no-store'});
+    const response = await fetch(`/api/dashboard?hours=${$('range').value}&starts_days=${$('starts-range').value}`, {cache: 'no-store'});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     offlineSnapshot = response.headers.get('X-Offline-Cache') === 'true';
     payload = await response.json();
@@ -361,7 +351,12 @@ async function load() {
 }
 
 $('range').addEventListener('change', load);
-window.addEventListener('resize', () => payload && renderCharts());
+$('starts-range').addEventListener('change', load);
+window.addEventListener('resize', () => {
+  if (!payload) return;
+  renderCharts();
+  renderEnergyHistory();
+});
 $('backup-import-form').addEventListener('submit', async event => {
   event.preventDefault();
   const file = $('backup-file').files[0];

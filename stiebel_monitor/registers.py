@@ -40,7 +40,7 @@ REGISTERS = {
     518: Register(518, "buffer_temperature", "°C", 0.1, True, "temperature"),
     519: Register(519, "buffer_set_temperature", "°C", 0.1, True, "temperature"),
     520: Register(520, "heating_pressure", "bar", 0.01, False, "hydraulic"),
-    521: Register(521, "flow_rate", "l/min", 0.1, False, "hydraulic"),
+    521: Register(521, "flow_rate", "l/min", 0.01, False, "hydraulic"),
     522: Register(522, "dhw_temperature", "°C", 0.1, True, "temperature"),
     523: Register(523, "dhw_set_temperature", "°C", 0.1, True, "temperature"),
     524: Register(524, "fan_cooling_temperature", "°C", 0.1, True, "temperature"),

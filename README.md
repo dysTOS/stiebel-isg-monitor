@@ -19,13 +19,12 @@ angeben; das Dashboard hat keine Anmeldung und sollte nicht ins Internet freigeg
 Kalendertage werden in der über `STIEBEL_TIMEZONE` konfigurierten Zeitzone ausgewertet;
 der Standard ist `Europe/Vienna`.
 
-## Progressive Web App
+## Offline-Ansicht
 
-Das Dashboard lässt sich über den Browser als App installieren. Es speichert die App-Oberfläche
-und den zuletzt geladenen Dashboard-Snapshot für die Offline-Ansicht. Live-Registerabfragen
-sowie Datenbank-Import und -Export benötigen weiterhin eine Verbindung zum Server. Auf demselben
-Gerät funktioniert die Installation unter `http://localhost:8081`; für den Zugriff und die
-Installation von anderen Geräten ist HTTPS erforderlich.
+Das Dashboard speichert die App-Oberfläche und den zuletzt geladenen Dashboard-Snapshot für die
+Offline-Ansicht. Live-Registerabfragen sowie Datenbank-Import und -Export benötigen weiterhin eine
+Verbindung zum Server. Eine App-Installation wird derzeit nicht angeboten; der Zugriff von anderen
+Geräten ohne Zertifikat bleibt auf die normale Browseransicht beschränkt.
 
 ## Docker
 

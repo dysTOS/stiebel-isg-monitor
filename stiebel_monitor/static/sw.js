@@ -1,7 +1,7 @@
 const CACHE_NAME = 'stiebel-monitor-pwa-v1';
 const APP_SHELL = [
   '/', '/registers', '/app.js', '/charts.js', '/registers.js', '/pwa.js', '/style.css',
-  '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png',
+  '/icon.svg', '/icon-192.png', '/icon-512.png',
 ];
 
 function markOffline(response) {

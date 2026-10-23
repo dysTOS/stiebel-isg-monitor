@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#101415">
-  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <title>Wärmepumpe · Live</title>
@@ -25,7 +24,6 @@
         <option value="168">7 Tage</option>
         <option value="720">30 Tage</option>
       </select>
-      <button id="install-app" class="install-pwa" type="button" hidden>App installieren</button>
       <a class="button-link" href="/registers">Register</a>
     </div>
   </header>
@@ -34,8 +32,10 @@
     <section class="hero-grid">
       <article class="card hero-card"><span>Außen</span><strong id="outside">–</strong><small id="outside-meta">Außentemperatur</small></article>
       <article class="card hero-card"><span>Raumfühler</span><strong id="room">–</strong><small id="room-meta">Raumtemperatur</small></article>
+      <article class="card hero-card"><span>Heizkreis HK 1</span><strong id="heating-circuit">–</strong><small id="heating-circuit-meta">Istwert</small></article>
+      <article class="card hero-card"><span>Puffer</span><strong id="buffer">–</strong><small id="buffer-meta">Istwert</small></article>
       <article class="card hero-card"><span>Vorlauf</span><strong id="flow">–</strong><small id="delta">Differenz –</small></article>
-      <article class="card hero-card accent"><span>Warmwasser</span><strong id="dhw">–</strong><small id="dhw-set">Soll –</small></article>
+      <article class="card hero-card accent"><span>Warmwasser</span><strong id="dhw">–</strong><small id="dhw-meta">Istwert</small></article>
     </section>
 
     <section class="status-strip card">
@@ -45,10 +45,6 @@
       <div class="metric"><span>COP heute, grob</span><strong id="cop">–</strong></div>
     </section>
 
-    <section class="card panel diagnostics">
-      <div class="panel-title"><div><p class="eyebrow">Regelung</p><h2>Soll und Ist</h2></div></div>
-      <div id="targets" class="target-grid"></div>
-    </section>
     <section class="card panel alerts">
       <div class="panel-title"><div><p class="eyebrow">Diagnose</p><h2>Status und Hinweise</h2></div></div>
       <div id="alerts-list" class="alerts-list"></div>
@@ -69,7 +65,7 @@
         <div class="chart-wrap compact"><canvas id="states-chart"></canvas><div id="states-empty" class="empty">Noch keine Statuswerte im Zeitraum</div></div>
       </article>
       <article class="card panel">
-        <div class="panel-title"><div><p class="eyebrow">Takten</p><h2>Starts pro Tag</h2></div></div>
+        <div class="panel-title"><div><p class="eyebrow">Takten</p><h2>Starts pro Tag</h2></div><select id="starts-range" aria-label="Zeitraum Starts pro Tag"><option value="7" selected>7 Tage</option><option value="14">14 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option></select></div>
         <div class="chart-wrap compact"><canvas id="starts-chart"></canvas><div id="starts-empty" class="empty">Noch keine vollständigen Läufe</div></div>
         <div id="cycling-summary" class="cycling-summary"></div>
       </article>
@@ -79,8 +75,9 @@
       </article>
       <article class="card panel wide">
         <div class="panel-title"><div><p class="eyebrow">Zeitraum</p><h2>Energie und geschätzter COP pro Tag</h2></div></div>
-        <div id="energy-history" class="history-grid"></div>
-        <p class="chart-note">Tageszählerwerte sind gespeicherte Momentaufnahmen; fehlende Messungen und der aktuelle Tag können unvollständig sein.</p>
+        <div id="energy-history-legend" class="legend"></div>
+        <div class="chart-wrap energy-chart-wrap"><canvas id="energy-history-chart"></canvas><div id="energy-history-empty" class="empty">Noch keine Energiehistorie gespeichert</div><div id="energy-history-tooltip" class="chart-tooltip" role="status" aria-live="polite"></div></div>
+        <p class="chart-note">Wärme und Strom sind in kWh dargestellt; der COP nutzt die rechte Skala. Tageszählerwerte sind gespeicherte Momentaufnahmen und können unvollständig sein.</p>
       </article>
     </section>
 

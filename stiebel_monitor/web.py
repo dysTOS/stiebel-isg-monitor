@@ -61,8 +61,9 @@ def _run_stats(rows, timezone):
     ]
 
 
-def dashboard_data(db_path, monitor, hours=24, now=None, timezone_name=None):
+def dashboard_data(db_path, monitor, hours=24, now=None, timezone_name=None, starts_days=7):
     hours = min(24 * 31, max(1, int(hours)))
+    starts_days = min(365, max(1, int(starts_days)))
     now_utc = now or dt.datetime.now(dt.timezone.utc)
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=dt.timezone.utc)
@@ -103,15 +104,22 @@ def dashboard_data(db_path, monitor, hours=24, now=None, timezone_name=None):
                 "heating_circuit_pump_1": None,
             })
             sample[row["name"]] = row["value"]
-        stats_start = min(cutoff_dt, today_start).isoformat()
+        starts_start_day = local_today - dt.timedelta(days=starts_days - 1)
+        starts_cutoff = dt.datetime.combine(starts_start_day, dt.time.min, timezone).astimezone(dt.timezone.utc)
+        stats_start = min(cutoff_dt, today_start, starts_cutoff).isoformat()
         stats_rows = db.execute("""
             SELECT started_utc, duration_seconds FROM compressor_runs
             WHERE started_utc >= ? ORDER BY started_utc
         """, (stats_start,)).fetchall()
-        daily = _run_stats(
-            [row for row in stats_rows if dt.datetime.fromisoformat(row["started_utc"]) >= cutoff_dt],
+        daily_counts = _run_stats(
+            [row for row in stats_rows if dt.datetime.fromisoformat(row["started_utc"]) >= starts_cutoff],
             timezone,
         )
+        counts_by_day = {item["day"]: item["starts"] for item in daily_counts}
+        daily = [
+            {"day": (starts_start_day + dt.timedelta(days=offset)).isoformat(), "starts": counts_by_day.get((starts_start_day + dt.timedelta(days=offset)).isoformat(), 0)}
+            for offset in range(starts_days)
+        ]
         today_rows = [row for row in stats_rows if dt.datetime.fromisoformat(row["started_utc"]) >= today_start]
         today_stats = _run_stats(today_rows, timezone)
         today = today_stats[0] if today_stats else {
@@ -339,7 +347,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/dashboard":
             try:
                 hours = parse_qs(parsed.query).get("hours", ["24"])[0]
-                self._json(dashboard_data(self.server.db_path, self.server.monitor, hours))
+                starts_days = parse_qs(parsed.query).get("starts_days", ["7"])[0]
+                self._json(dashboard_data(self.server.db_path, self.server.monitor, hours, starts_days=starts_days))
             except (ValueError, sqlite3.Error) as exc:
                 self._json({"error": str(exc)}, 400)
             return
@@ -351,7 +360,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json({"error": str(exc)}, 502)
             return
-        files = {"/": "index.html", "/registers": "registers.html", "/app.js": "app.js", "/charts.js": "charts.js", "/registers.js": "registers.js", "/pwa.js": "pwa.js", "/style.css": "style.css", "/manifest.webmanifest": "manifest.webmanifest", "/sw.js": "sw.js", "/icon.svg": "icon.svg", "/icon-192.png": "icon-192.png", "/icon-512.png": "icon-512.png"}
+        files = {"/": "index.html", "/registers": "registers.html", "/app.js": "app.js", "/charts.js": "charts.js", "/registers.js": "registers.js", "/pwa.js": "pwa.js", "/style.css": "style.css", "/sw.js": "sw.js", "/icon.svg": "icon.svg", "/icon-192.png": "icon-192.png", "/icon-512.png": "icon-512.png"}
         filename = files.get(parsed.path)
         if filename is None:
             self.send_error(404)
@@ -359,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.server.static_dir / filename
         data = path.read_bytes()
         self.send_response(200)
-        content_type = "application/manifest+json" if path.suffix == ".webmanifest" else mimetypes.guess_type(path.name)[0]
+        content_type = mimetypes.guess_type(path.name)[0]
         self.send_header("Content-Type", content_type or "application/octet-stream")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache")
