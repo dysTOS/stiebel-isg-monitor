@@ -221,7 +221,7 @@ export function renderStateChart({canvas, empty, rows, hours}) {
   });
 }
 
-export function renderEnergyHistoryChart({canvas, empty, tooltip, rows}) {
+export function renderEnergyHistoryChart({canvas, empty, tooltip, rows, visible = {heatHeating: true, heatDhw: true, electricHeating: true, electricDhw: true, cop: true}}) {
   empty.style.display = rows.length ? 'none' : 'grid';
   tooltip.style.display = 'none';
   canvas.onpointermove = null;
@@ -233,11 +233,12 @@ export function renderEnergyHistoryChart({canvas, empty, tooltip, rows}) {
   const padding = {left: 48, right: 48, top: 20, bottom: 30};
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  const sums = row => [row.heatHeating, row.heatDhw].reduce((sum, value) => sum + (value ?? 0), 0);
-  const electricSums = row => [row.electricHeating, row.electricDhw].reduce((sum, value) => sum + (value ?? 0), 0);
-  const maxEnergy = Math.max(1, ...rows.flatMap(row => [sums(row), electricSums(row)]));
+  const sums = (row, names) => names.filter(name => visible[name]).reduce((sum, name) => sum + (row[name] ?? 0), 0);
+  const heatNames = ['heatHeating', 'heatDhw'];
+  const electricNames = ['electricHeating', 'electricDhw'];
+  const maxEnergy = Math.max(1, ...rows.flatMap(row => [sums(row, heatNames), sums(row, electricNames)]));
   const energyMax = Math.max(1, Math.ceil(maxEnergy / 5) * 5);
-  const copValues = rows.map(row => row.cop).filter(value => Number.isFinite(value));
+  const copValues = visible.cop ? rows.map(row => row.cop).filter(value => Number.isFinite(value)) : [];
   let copMin = copValues.length ? Math.max(0, Math.floor(Math.min(...copValues) - 0.5)) : 0;
   let copMax = copValues.length ? Math.ceil(Math.max(...copValues) + 0.5) : 1;
   if (copMax <= copMin) copMax = copMin + 1;
@@ -261,9 +262,11 @@ export function renderEnergyHistoryChart({canvas, empty, tooltip, rows}) {
     context.lineTo(width - padding.right, y);
     context.stroke();
     context.fillText(tick === 0 ? '0 kWh' : value.toFixed(0), padding.left - 7, y);
-    context.textAlign = 'left';
-    const copTick = (copMin + (copMax - copMin) * tick / 4).toFixed(tick === 0 ? 0 : 1);
-    context.fillText(tick === 0 ? `${copTick} COP` : copTick, width - padding.right + 7, y);
+    if (visible.cop) {
+      context.textAlign = 'left';
+      const copTick = (copMin + (copMax - copMin) * tick / 4).toFixed(tick === 0 ? 0 : 1);
+      context.fillText(tick === 0 ? `${copTick} COP` : copTick, width - padding.right + 7, y);
+    }
     context.textAlign = 'right';
   }
   context.textBaseline = 'alphabetic';
@@ -281,9 +284,9 @@ export function renderEnergyHistoryChart({canvas, empty, tooltip, rows}) {
   const copPoints = [];
   rows.forEach((row, index) => {
     const center = padding.left + groupWidth * (index + 0.5);
-    drawStack(center - gap / 2 - barWidth, [row.heatHeating, row.heatDhw], ['#a7e22e', '#d9f99d']);
-    drawStack(center + gap / 2, [row.electricHeating, row.electricDhw], ['#67aaf9', '#65d8d2']);
-    if (row.cop != null) copPoints.push({x: center, y: yCop(row.cop), value: row.cop});
+    drawStack(center - gap / 2 - barWidth, heatNames.map(name => visible[name] ? row[name] : null), ['#a7e22e', '#d9f99d']);
+    drawStack(center + gap / 2, electricNames.map(name => visible[name] ? row[name] : null), ['#67aaf9', '#65d8d2']);
+    if (visible.cop && row.cop != null) copPoints.push({x: center, y: yCop(row.cop), value: row.cop});
     if (rows.length <= 10 || index % Math.ceil(rows.length / 8) === 0) {
       context.fillStyle = '#7f8986';
       context.textAlign = 'center';
@@ -317,7 +320,14 @@ export function renderEnergyHistoryChart({canvas, empty, tooltip, rows}) {
     const day = new Date(`${row.day}T12:00:00`).toLocaleDateString('de-AT', {day: '2-digit', month: '2-digit', year: 'numeric'});
     const value = number => number == null ? '–' : Number(number).toLocaleString('de-AT', {maximumFractionDigits: 1});
     const cop = row.cop == null ? '–' : Number(row.cop).toLocaleString('de-AT', {maximumFractionDigits: 2});
-    tooltip.innerHTML = `<strong>${day}</strong><span><i style="background:#a7e22e"></i>Wärme Heizen <b>${value(row.heatHeating)} kWh</b></span><span><i style="background:#d9f99d"></i>Wärme Warmwasser <b>${value(row.heatDhw)} kWh</b></span><span><i style="background:#67aaf9"></i>Strom Heizen <b>${value(row.electricHeating)} kWh</b></span><span><i style="background:#65d8d2"></i>Strom Warmwasser <b>${value(row.electricDhw)} kWh</b></span><span><i style="background:#ffb454"></i>COP <b>${cop}</b></span>`;
+    const details = [
+      ['heatHeating', 'Wärme Heizen', '#a7e22e', value(row.heatHeating), 'kWh'],
+      ['heatDhw', 'Wärme Warmwasser', '#d9f99d', value(row.heatDhw), 'kWh'],
+      ['electricHeating', 'Strom Heizen', '#67aaf9', value(row.electricHeating), 'kWh'],
+      ['electricDhw', 'Strom Warmwasser', '#65d8d2', value(row.electricDhw), 'kWh'],
+      ['cop', 'COP', '#ffb454', cop, ''],
+    ].filter(([name]) => visible[name]);
+    tooltip.innerHTML = `<strong>${day}</strong>${details.map(([, label, color, result, unit]) => `<span><i style="background:${color}"></i>${label} <b>${result}${unit ? ` ${unit}` : ''}</b></span>`).join('')}`;
     tooltip.style.display = 'block';
     const wrapper = canvas.parentElement.getBoundingClientRect();
     tooltip.style.left = `${Math.min(wrapper.width - tooltip.offsetWidth - 8, Math.max(8, event.clientX - wrapper.left + 12))}px`;

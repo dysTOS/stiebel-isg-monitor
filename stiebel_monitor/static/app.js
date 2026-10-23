@@ -14,6 +14,11 @@ const LABELS = {
 };
 const CHART_VISIBILITY_KEY = 'stiebel-isg-monitor.chart-visibility.v1';
 const ENERGY_NAMES = ['heat_energy_heating_day', 'heat_energy_dhw_day', 'electric_energy_heating_day', 'electric_energy_dhw_day'];
+const ENERGY_SERIES = [
+  ['heatHeating', 'Wärme Heizen', '#a7e22e'], ['heatDhw', 'Wärme Warmwasser', '#d9f99d'],
+  ['electricHeating', 'Strom Heizen', '#67aaf9'], ['electricDhw', 'Strom Warmwasser', '#65d8d2'],
+  ['cop', 'COP', '#ffb454'],
+];
 const $ = id => document.getElementById(id);
 let payload = null;
 let loading = false;
@@ -202,16 +207,22 @@ function renderEnergyHistory() {
       cop: current.heat != null && current.power > 0 ? current.heat / current.power : null,
     };
   });
-  renderEnergyHistoryChart({canvas: $('energy-history-chart'), empty: $('energy-history-empty'), tooltip: $('energy-history-tooltip'), rows});
-  [
-    ['Wärme Heizen', '#a7e22e'], ['Wärme Warmwasser', '#d9f99d'],
-    ['Strom Heizen', '#67aaf9'], ['Strom Warmwasser', '#65d8d2'], ['COP', '#ffb454'],
-  ].forEach(([label, color]) => {
-    const item = document.createElement('span');
+  const visible = Object.fromEntries(ENERGY_SERIES.map(([name]) => [name, isChartVisible(`energy:${name}`)]));
+  renderEnergyHistoryChart({canvas: $('energy-history-chart'), empty: $('energy-history-empty'), tooltip: $('energy-history-tooltip'), rows, visible});
+  ENERGY_SERIES.forEach(([name, label, color]) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `legend-toggle${visible[name] ? '' : ' muted'}`;
+    item.setAttribute('aria-pressed', String(visible[name]));
+    item.title = `${visible[name] ? 'Ausblenden' : 'Einblenden'}: ${label}`;
     const marker = document.createElement('i');
     marker.style.background = color;
-    if (label === 'COP') marker.className = 'legend-line';
+    if (name === 'cop') marker.className = 'legend-line';
     item.append(marker, label);
+    item.addEventListener('click', () => {
+      setChartVisible(`energy:${name}`, !isChartVisible(`energy:${name}`));
+      renderEnergyHistory();
+    });
     legend.append(item);
   });
 }
@@ -335,7 +346,7 @@ async function load() {
   if (loading) return;
   loading = true;
   try {
-    const response = await fetch(`/api/dashboard?hours=${$('range').value}&starts_days=${$('starts-range').value}`, {cache: 'no-store'});
+    const response = await fetch(`/api/dashboard?hours=${$('range').value}&starts_days=${$('starts-range').value}&energy_days=${$('energy-range').value}`, {cache: 'no-store'});
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     offlineSnapshot = response.headers.get('X-Offline-Cache') === 'true';
     payload = await response.json();
@@ -352,6 +363,7 @@ async function load() {
 
 $('range').addEventListener('change', load);
 $('starts-range').addEventListener('change', load);
+$('energy-range').addEventListener('change', load);
 window.addEventListener('resize', () => {
   if (!payload) return;
   renderCharts();

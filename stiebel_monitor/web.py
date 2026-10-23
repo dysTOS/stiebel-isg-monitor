@@ -61,9 +61,10 @@ def _run_stats(rows, timezone):
     ]
 
 
-def dashboard_data(db_path, monitor, hours=24, now=None, timezone_name=None, starts_days=7):
+def dashboard_data(db_path, monitor, hours=24, now=None, timezone_name=None, starts_days=7, energy_days=7):
     hours = min(24 * 31, max(1, int(hours)))
     starts_days = min(365, max(1, int(starts_days)))
+    energy_days = min(365, max(1, int(energy_days)))
     now_utc = now or dt.datetime.now(dt.timezone.utc)
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=dt.timezone.utc)
@@ -151,8 +152,8 @@ def dashboard_data(db_path, monitor, hours=24, now=None, timezone_name=None, sta
         energy_names = ("heat_energy_heating_day", "heat_energy_dhw_day", "electric_energy_heating_day", "electric_energy_dhw_day")
         energy_placeholders = ",".join("?" for _ in energy_names)
         local_now = now_utc.astimezone(timezone)
-        local_days = max(1, (hours + 23) // 24)
-        energy_start = (local_now.replace(hour=0, minute=0, second=0, microsecond=0) - dt.timedelta(days=local_days)).astimezone(dt.timezone.utc).isoformat()
+        energy_start_day = local_now.date() - dt.timedelta(days=energy_days - 1)
+        energy_start = dt.datetime.combine(energy_start_day, dt.time.min, timezone).astimezone(dt.timezone.utc).isoformat()
         energy_rows = db.execute(f"""
             SELECT timestamp_utc, name, value FROM measurements
             WHERE name IN ({energy_placeholders}) AND timestamp_utc >= ? AND value IS NOT NULL
@@ -348,7 +349,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 hours = parse_qs(parsed.query).get("hours", ["24"])[0]
                 starts_days = parse_qs(parsed.query).get("starts_days", ["7"])[0]
-                self._json(dashboard_data(self.server.db_path, self.server.monitor, hours, starts_days=starts_days))
+                energy_days = parse_qs(parsed.query).get("energy_days", ["7"])[0]
+                self._json(dashboard_data(self.server.db_path, self.server.monitor, hours, starts_days=starts_days, energy_days=energy_days))
             except (ValueError, sqlite3.Error) as exc:
                 self._json({"error": str(exc)}, 400)
             return
